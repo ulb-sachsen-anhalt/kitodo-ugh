@@ -342,10 +342,10 @@ public class Metadata implements Serializable {
 
         if (this.getType() != null) {
             // Get metadata type and value.
-            result += "Metadata (" + this.getType().getName() + "): " + (this.getValue() != null ? "\"" + this.getValue() + "\"" : "NULL") + "\n";
+            result += "Metadata (" + this.getType().getName() + "): " + (this.getValue() != null ? "\"" + this.getValue() + "\"" : "NULL");
         } else {
             // Get metadata values without type.
-            result += "Metadata (WITHOUT TYPE!!): " + (this.getValue() != null ? "\"" + this.getValue() + "\"" : "NULL") + "\n";
+            result += "Metadata (WITHOUT TYPE!!): " + (this.getValue() != null ? "\"" + this.getValue() + "\"" : "NULL");
         }
 
         return result;
@@ -362,7 +362,7 @@ public class Metadata implements Serializable {
      **************************************************************************/
     public boolean equals(Metadata metadata) {
 
-        LOGGER.debug("\r\n" + "metaData getClass()=" + this.getClass() + " ->id:" + this.getType().getName());
+        LOGGER.debug(this.getType().getName() + " vs. " + metadata.getType().getName());
 
         if (!(this.getType().equals(metadata.getType()))) {
             return false;

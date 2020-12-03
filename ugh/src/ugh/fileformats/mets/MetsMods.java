@@ -1914,6 +1914,8 @@ public class MetsMods implements ugh.dl.Fileformat {
         LOGGER.debug("Query expression: " + GOOBI_INTERNAL_METADATA_XPATH);
 
         // Get metadata node and handle Goobi extension metadata (and persons).
+        int failAdds = 0;
+		int doneAdds = 0;
         NodeList metadataAndPersonNodes = (NodeList) xqueryresult;
         if (metadataAndPersonNodes != null) {
             for (int i = 0; i < metadataAndPersonNodes.getLength(); i++) {
@@ -2004,6 +2006,9 @@ public class MetsMods implements ugh.dl.Fileformat {
                                 }
 
                                 List<Metadata> metadataList = new ArrayList<Metadata>(metadataGroup.getMetadataList());
+                                // ulb start
+                                boolean isAlreadyAdded = false;
+                                // ulb end
                                 for (Metadata meta : metadataList) {
                                     if (meta.getType().getName().equals(metadataName)) {
                                         if (meta.getValue() == null || meta.getValue().isEmpty()) {
@@ -2018,7 +2023,23 @@ public class MetsMods implements ugh.dl.Fileformat {
                                             if (authority != null && authorityURI != null && valueURI != null) {
                                                 mdnew.setAutorityFile(authority, authorityURI, valueURI);
                                             }
-                                            metadataGroup.addMetadata(mdnew);
+                                            // ulb start
+                                            List<Metadata> previousMetadata = metadataGroup.getMetadataList();
+                                            for(int k=0; k < previousMetadata.size(); k++) {
+                                            	Metadata m = previousMetadata.get(k);
+                                            	if (m.equals(meta)) {
+                                            		isAlreadyAdded = true;
+                                            		failAdds++;
+                                            		LOGGER.warn("["+k+"] detected duplicate entry: " + meta.getType()+ ":" + value);
+                                            	}
+                                            }
+                                            
+                                            if (!isAlreadyAdded) {
+                                            	LOGGER.debug("["+i+" / "+ j+"] add new "+ mdnew);
+                                            	metadataGroup.addMetadata(mdnew);
+                                            	doneAdds++;
+                                            }
+                                            // ulb end
                                         }
                                     }
                                 }
