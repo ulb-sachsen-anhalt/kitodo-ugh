@@ -28,6 +28,7 @@ import gov.loc.mets.FileType;
 import gov.loc.mets.FileType.FLocat;
 import gov.loc.mets.Helper;
 import gov.loc.mets.MdSecType;
+import gov.loc.mets.MdSecType.MdRef.MDTYPE;
 import gov.loc.mets.MdSecType.MdWrap;
 import gov.loc.mets.MdSecType.MdWrap.XmlData;
 import gov.loc.mets.MetsDocument;
@@ -60,6 +61,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NoSuchElementException;
 import java.util.SortedMap;
@@ -528,6 +530,7 @@ public class MetsMods implements ugh.dl.Fileformat {
 
         metsElement = mets.getMets();
         this.metsHelper = new Helper(metsElement);
+        
 
         // metsElement.getStructMapArray(0).getTYPE();
 
@@ -575,7 +578,19 @@ public class MetsMods implements ugh.dl.Fileformat {
         return true;
     }
 
-    private void readAmdSec(Mets metsElement) {
+    // try to find goobi section
+    private void sanitizeGoobiSection(Mets metsElement) {
+    	// first, start from strctMap Type LOGICAL to find the ID of the DMD
+    	List<MdSecType> dmdSecs = metsElement.getDmdSecList();
+    	for(int i=0; i < dmdSecs.size(); i++) {
+    		MdSecType sec = dmdSecs.get(i);
+    		if (sec.getMdWrap().getMDTYPE().equals(MDTYPE.MODS)) {
+    			System.out.println(sec);
+    		}
+    	}
+	}
+
+	private void readAmdSec(Mets metsElement) {
         List<AmdSecType> list = metsElement.getAmdSecList();
         // for (AmdSecType ast : list) {
         if (list != null && !list.isEmpty()) {
@@ -1914,8 +1929,9 @@ public class MetsMods implements ugh.dl.Fileformat {
         LOGGER.debug("Query expression: " + GOOBI_INTERNAL_METADATA_XPATH);
 
         // Get metadata node and handle Goobi extension metadata (and persons).
-        int failAdds = 0;
-		int doneAdds = 0;
+        // ULB Sachsen-Anhalt Hartwig START
+        Map<String, Integer> duplicates = new HashMap<>();
+        // ULB Sachsen-Anhalt Hartwig END
         NodeList metadataAndPersonNodes = (NodeList) xqueryresult;
         if (metadataAndPersonNodes != null) {
             for (int i = 0; i < metadataAndPersonNodes.getLength(); i++) {
@@ -1996,6 +2012,27 @@ public class MetsMods implements ugh.dl.Fileformat {
 
                                 String metadataName = metadata.getAttributes().getNamedItem("name").getTextContent();
                                 String value = metadata.getTextContent();
+                                
+                                // ULB Sachsen-Anhalt Hartwig START
+                                // ignore duplicate type-value combinations
+                                String key = metadataName + ":" + value;
+                                // speed up: check whether entry already in duplicates map
+                                if(duplicates.containsKey(key)) {
+                                	duplicates.put(key,  duplicates.get(key) + 1);
+                                	continue;
+                                } else {
+                                	// if not, review so far collected metadata
+	                                if(this.alreadyInMetadata(metadataGroup, metadataName, value)) {
+	                                	if (! duplicates.containsKey(key)) {
+	                                		duplicates.put(key, 1);
+	                                	} else {
+	                                		duplicates.put(key,  duplicates.get(key) + 1);
+	                                	}
+	                                	continue;
+	                                }
+                                }
+                                // ULB Sachsen-Anhalt Hartwig END
+                                
                                 String authority = null;
                                 String authorityURI = null;
                                 String valueURI = null;
@@ -2006,9 +2043,6 @@ public class MetsMods implements ugh.dl.Fileformat {
                                 }
 
                                 List<Metadata> metadataList = new ArrayList<Metadata>(metadataGroup.getMetadataList());
-                                // ulb start
-                                boolean isAlreadyAdded = false;
-                                // ulb end
                                 for (Metadata meta : metadataList) {
                                     if (meta.getType().getName().equals(metadataName)) {
                                         if (meta.getValue() == null || meta.getValue().isEmpty()) {
@@ -2023,23 +2057,7 @@ public class MetsMods implements ugh.dl.Fileformat {
                                             if (authority != null && authorityURI != null && valueURI != null) {
                                                 mdnew.setAutorityFile(authority, authorityURI, valueURI);
                                             }
-                                            // ulb start
-                                            List<Metadata> previousMetadata = metadataGroup.getMetadataList();
-                                            for(int k=0; k < previousMetadata.size(); k++) {
-                                            	Metadata m = previousMetadata.get(k);
-                                            	if (m.equals(meta)) {
-                                            		isAlreadyAdded = true;
-                                            		failAdds++;
-                                            		LOGGER.warn("["+k+"] detected duplicate entry: " + meta.getType()+ ":" + value);
-                                            	}
-                                            }
-                                            
-                                            if (!isAlreadyAdded) {
-                                            	LOGGER.debug("["+i+" / "+ j+"] add new "+ mdnew);
-                                            	metadataGroup.addMetadata(mdnew);
-                                            	doneAdds++;
-                                            }
-                                            // ulb end
+                                            metadataGroup.addMetadata(mdnew);
                                         }
                                     }
                                 }
@@ -2127,6 +2145,13 @@ public class MetsMods implements ugh.dl.Fileformat {
                         }
 
                         LOGGER.debug("Added metadataGroup '" + mgt.getName() + "' to DocStruct '" + inStruct.getType().getName() + "'");
+                        if(! duplicates.isEmpty()) {
+                        	int total = 0;
+                        	for(int val : duplicates.values()) {
+                        		total += val;
+                        	}
+                        	LOGGER.warn("dropped total '"+total+"' duplicates: " + duplicates);
+                        }
 
                     } catch (DocStructHasNoTypeException e) {
                         String message = "DocumentStructure for which metadata should be added, has no type!";
@@ -2235,7 +2260,27 @@ public class MetsMods implements ugh.dl.Fileformat {
         }
     }
 
-    /***************************************************************************
+    /**
+     * 
+     * ULB Sachsen-Anhalt: prevent duplicate metadataname : value combinations in section goobi
+     * 
+     * @param metadataGroup
+     * @param metadataName
+     * @param value
+     * @return
+     */
+    private boolean alreadyInMetadata(MetadataGroup metadataGroup, String metadataName, String value) {
+        List<Metadata> previousMetadata = metadataGroup.getMetadataList();
+        for(int k=0; k < previousMetadata.size(); k++) {
+        	Metadata m = previousMetadata.get(k);
+        	if (metadataName.equals(m.getType().getName()) && value.equals(m.getValue())) {
+        		return true;
+        	}
+        }
+        return false;
+	}
+
+	/***************************************************************************
      * <p>
      * Checks for missing, but needed settings.
      * </p>
